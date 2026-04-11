@@ -2,30 +2,39 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  Auth Routes — /api/auth
 //
-//  Public:    POST /api/auth/register  → create account
-//             POST /api/auth/login     → returns JWT
-//  Protected: GET  /api/auth/me        → returns logged-in user
+//  Public:
+//    POST /api/auth/register         → email/password signup
+//    POST /api/auth/login            → email/password login
+//    POST /api/auth/google           → Google OAuth sign-in/sign-up
+//    POST /api/auth/forgot-password  → sends OTP reset email
+//    POST /api/auth/reset-password   → verifies OTP, sets new password
+//
+//  Protected (JWT required):
+//    GET  /api/auth/me               → get current user
+//    PUT  /api/auth/profile          → update name/age/bio
+//    PUT  /api/auth/password         → change password
 // ─────────────────────────────────────────────────────────────────────────────
 
-const express        = require("express");
-const { register, login, getMe, updateProfile, changePassword } = require("../controllers/authController");
-const { protect }    = require("../middleware/authMiddleware");
+const express = require("express");
+const {
+  register, login, googleAuth,
+  forgotPassword, resetPassword,
+  getMe, updateProfile, changePassword,
+} = require("../controllers/authController");
+const { protect } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-// ── Public routes (no token needed) ───────────────────────────────────────────
-router.post("/register", register);
-router.post("/login",    login);
+// ── Public ────────────────────────────────────────────────────────────────────
+router.post("/register",        register);
+router.post("/login",           login);
+router.post("/google",          googleAuth);        // Feature 1: Google OAuth
+router.post("/forgot-password", forgotPassword);    // Feature 1: Forgot password
+router.post("/reset-password",  resetPassword);     // Feature 1: Reset with OTP
 
-// ── Protected routes (JWT required) ───────────────────────────────────────────
-router.get("/me",          protect, getMe);
-
-// PUT /api/auth/profile  → update name, age, bio
-// The user edits their own profile — no admin access needed.
-router.put("/profile",    protect, updateProfile);
-
-// PUT /api/auth/password → change password (requires current password)
-// Separate endpoint from profile so password change is an explicit action.
-router.put("/password",   protect, changePassword);
+// ── Protected ─────────────────────────────────────────────────────────────────
+router.get ("/me",       protect, getMe);
+router.put ("/profile",  protect, updateProfile);
+router.put ("/password", protect, changePassword);
 
 module.exports = router;

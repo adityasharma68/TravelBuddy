@@ -53,6 +53,7 @@ app.use(express.urlencoded({ extended: true })); // Parse form-encoded bodies
 app.use("/api/auth",  require("./routes/authRoutes"));
 app.use("/api/trips", require("./routes/tripRoutes"));
 app.use("/api/ai",    require("./routes/aiRoutes"));
+app.use("/api/upload", require("./routes/uploadRoutes")); // Feature 2: Image uploads
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) =>
@@ -80,18 +81,22 @@ async function initDB() {
   // ── Create tables ────────────────────────────────────────────────────────
   await db.query(`
     CREATE TABLE IF NOT EXISTS users (
-      id          INT AUTO_INCREMENT PRIMARY KEY,
-      name        VARCHAR(100)  NOT NULL,
-      email       VARCHAR(150)  NOT NULL UNIQUE,
-      password    VARCHAR(255)  NOT NULL,
-      role        ENUM('user','admin') DEFAULT 'user',
-      age         INT           DEFAULT 25,
-      bio         TEXT,
-      status      ENUM('active','suspended') DEFAULT 'active',
-      avatar      VARCHAR(10),
-      color       VARCHAR(20)   DEFAULT '#1a3d2b',
-      trips_count INT           DEFAULT 0,
-      created_at  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
+      id            INT AUTO_INCREMENT PRIMARY KEY,
+      name          VARCHAR(100)  NOT NULL,
+      email         VARCHAR(150)  NOT NULL UNIQUE,
+      password      VARCHAR(255)  NULL,             -- NULL for Google-only accounts
+      role          ENUM('user','admin') DEFAULT 'user',
+      age           INT           DEFAULT 25,
+      bio           TEXT,
+      status        ENUM('active','suspended') DEFAULT 'active',
+      avatar        VARCHAR(10),
+      color         VARCHAR(20)   DEFAULT '#1a3d2b',
+      avatar_url    VARCHAR(500)  NULL,             -- Feature 2: Cloudinary profile picture URL
+      google_id     VARCHAR(100)  NULL UNIQUE,      -- Feature 1: Google OAuth user ID
+      reset_token   VARCHAR(255)  NULL,             -- Feature 1: Hashed OTP for password reset
+      reset_expires DATETIME      NULL,             -- Feature 1: OTP expiry timestamp
+      trips_count   INT           DEFAULT 0,
+      created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
     )
   `);
 

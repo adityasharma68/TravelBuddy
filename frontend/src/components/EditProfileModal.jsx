@@ -18,13 +18,14 @@
 
 import { useState, useEffect } from "react";
 import { useAuth }             from "../context/AuthContext";
-import { updateProfile, changePassword } from "../services/authService";
+import { updateProfile, changePassword, uploadAvatar, deleteAvatar } from "../services/authService";
+import ImageUpload             from "./ImageUpload";   // Feature 2
 
 export default function EditProfileModal({ open, onClose, showToast }) {
   const { user, setUser } = useAuth(); // setUser lets us refresh global state
 
   // ── Which sub-tab is active ────────────────────────────────────────────────
-  const [tab, setTab] = useState("profile"); // "profile" | "password"
+  const [tab, setTab] = useState("profile"); // "profile" | "photo" | "password"
 
   // ── Profile form state ─────────────────────────────────────────────────────
   const [profile, setProfile] = useState({ name: "", age: "", bio: "" });
@@ -187,9 +188,9 @@ export default function EditProfileModal({ open, onClose, showToast }) {
             </div>
           </div>
 
-          {/* ── Sub-tabs: Profile | Password ────────────────────────────── */}
+          {/* ── Sub-tabs: Profile | Photo | Password ────────────────────── */}
           <div className="flex gap-1 bg-cream rounded-xl p-1 mb-5">
-            {[["profile", "👤 Profile Info"], ["password", "🔐 Change Password"]].map(([k, l]) => (
+            {[["profile", "👤 Profile"], ["photo", "🖼️ Photo"], ["password", "🔐 Password"]].map(([k, l]) => (
               <button
                 key={k}
                 className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all
@@ -276,6 +277,60 @@ export default function EditProfileModal({ open, onClose, showToast }) {
           )}
 
           {/* ── Tab 2: Change Password ──────────────────────────────────── */}
+          {/* ── Tab 2: Photo Upload ─────────────────────────────────────────── */}
+          {tab === "photo" && (
+            <div>
+              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                Upload a profile picture. It will be stored securely on Cloudinary
+                and shown everywhere your name appears.
+              </p>
+
+              <div className="flex flex-col items-center mb-4">
+                <ImageUpload
+                  shape="circle"
+                  label="Profile Picture"
+                  uploadFn={uploadAvatar}
+                  current={user?.avatar_url || null}
+                  maxSizeMb={5}
+                  onUpload={(url, data) => {
+                    if (data?.user) {
+                      setUser(data.user);
+                      localStorage.setItem("tb_user", JSON.stringify(data.user));
+                    }
+                    showToast("Profile picture updated! 🖼️");
+                  }}
+                />
+              </div>
+
+              {user?.avatar_url && (
+                <div className="flex justify-center mb-5">
+                  <button type="button"
+                    className="text-xs text-red-500 hover:text-red-700 font-semibold
+                               bg-transparent border-none cursor-pointer transition-colors
+                               flex items-center gap-1.5"
+                    onClick={async () => {
+                      try {
+                        await deleteAvatar();
+                        const fresh = { ...user, avatar_url: null };
+                        setUser(fresh);
+                        localStorage.setItem("tb_user", JSON.stringify(fresh));
+                        showToast("Profile picture removed.");
+                      } catch {
+                        showToast("Failed to remove picture.", "e");
+                      }
+                    }}>
+                    🗑️ Remove profile picture
+                  </button>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button className="btn-secondary" onClick={onClose}>Done</button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Tab 3: Change Password ────────────────────────────────────────── */}
           {tab === "password" && (
             <div>
               {/* Current password — required to verify identity */}

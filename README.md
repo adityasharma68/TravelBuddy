@@ -228,3 +228,67 @@ Component → Custom Hook (state) → Service (API call) → Express Backend
 | AI        | Groq SDK (Llama 3.3 70B)          |
 | Maps      | Leaflet.js (CDN)                  |
 | HTTP      | Axios (with interceptors)         |
+
+---
+
+## Feature 1 — Google OAuth + Forgot Password
+
+### Setup
+
+**Backend `.env`:**
+```
+GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USER=your@gmail.com
+MAIL_PASS=your_app_password      # Gmail → Security → App Passwords
+MAIL_FROM="Travel Buddy <your@gmail.com>"
+```
+
+**Frontend `.env`:**
+```
+VITE_GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+```
+
+**Google Cloud Console setup:**
+1. console.cloud.google.com → New Project
+2. APIs & Services → OAuth consent screen → configure
+3. Credentials → Create → OAuth 2.0 Client ID → Web application
+4. Authorised JS origins: `http://localhost:5173`
+5. Copy Client ID to both `.env` files
+
+### How it works
+
+| Flow | Steps |
+|------|-------|
+| Google Sign-In | Click button → Google popup → access token → backend verifies via userinfo API → JWT returned |
+| Forgot Password | Enter email → 6-digit OTP emailed (15min expiry) → enter OTP → set new password |
+
+---
+
+## Feature 2 — Image Upload (Cloudinary)
+
+### Setup
+
+**Backend `.env`:**
+```
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+```
+Free tier: https://cloudinary.com (25GB storage/month)
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/upload/avatar | Upload profile picture (field: "image") |
+| POST | /api/upload/trip-image | Upload trip image (field: "image") |
+| DELETE | /api/upload/avatar | Remove profile picture |
+
+### How to use in the UI
+1. Log in → click your avatar in the header → Edit Profile
+2. Click the **🖼️ Photo** tab
+3. Click the circle or drag an image onto it
+4. Preview appears instantly (FileReader API — no server call yet)
+5. Upload begins automatically → Cloudinary URL saved to DB

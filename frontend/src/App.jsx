@@ -155,14 +155,20 @@ function Header({ user, onLogout, onEditProfile }) {
                            hover:border-white/30 transition-all duration-200
                            cursor-pointer group"
                 style={{ backdropFilter:"blur(4px)" }}>
-                {/* Avatar circle */}
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center
-                             text-xs font-black text-white shrink-0 border-2 border-white/25"
-                  style={{ background: user.color || "#2a5c40",
-                           boxShadow:"0 0 0 2px rgba(255,255,255,0.1)" }}>
-                  {user.avatar}
-                </div>
+                {/* Avatar circle — show photo if uploaded, else initials */}
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.name}
+                    className="w-7 h-7 rounded-full object-cover shrink-0
+                               border-2 border-white/25" />
+                ) : (
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center
+                               text-xs font-black text-white shrink-0 border-2 border-white/25"
+                    style={{ background: user.color || "#2a5c40",
+                             boxShadow:"0 0 0 2px rgba(255,255,255,0.1)" }}>
+                    {user.avatar}
+                  </div>
+                )}
                 {/* Name */}
                 <span className="text-sm font-semibold text-white/85
                                  group-hover:text-white transition-colors

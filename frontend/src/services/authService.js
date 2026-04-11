@@ -75,3 +75,44 @@ export const updateProfile = (data) => api.put("/auth/profile", data);
  * @param {{ currentPassword, newPassword }} data
  */
 export const changePassword = (data) => api.put("/auth/password", data);
+
+/**
+ * Google OAuth — send the ID token received from Google Sign-In to our backend.
+ * @param {{ credential: string }} data  — the ID token from @react-oauth/google
+ */
+export const googleLogin = (data) => api.post("/auth/google", data);
+
+/**
+ * Forgot password — sends a 6-digit OTP to the user's email.
+ * @param {{ email: string }} data
+ */
+export const forgotPassword = (data) => api.post("/auth/forgot-password", data);
+
+/**
+ * Reset password — verify the OTP and set a new password.
+ * @param {{ email: string, otp: string, newPassword: string }} data
+ */
+export const resetPassword = (data) => api.post("/auth/reset-password", data);
+
+/**
+ * Upload profile picture. Sends multipart/form-data.
+ * @param {FormData} formData  — must contain field "image"
+ */
+export const uploadAvatar = (formData) =>
+  api.post("/upload/avatar", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+/**
+ * Remove profile picture.
+ */
+export const deleteAvatar = () => api.delete("/upload/avatar");
+
+/**
+ * Upload a trip image. Returns { imageUrl }.
+ * @param {FormData} formData  — must contain field "image"
+ */
+export const uploadTripImage = (formData) =>
+  api.post("/upload/trip-image", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
