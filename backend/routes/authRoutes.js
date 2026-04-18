@@ -22,19 +22,25 @@ const {
   getMe, updateProfile, changePassword,
 } = require("../controllers/authController");
 const { protect } = require("../middleware/authMiddleware");
+const {
+  validateRegister, validateLogin,
+  validateForgotPassword, validateResetPassword,
+  validateProfile, validateChangePassword,
+} = require("../middleware/validate");
 
 const router = express.Router();
 
 // ── Public ────────────────────────────────────────────────────────────────────
-router.post("/register",        register);
-router.post("/login",           login);
-router.post("/google",          googleAuth);        // Feature 1: Google OAuth
-router.post("/forgot-password", forgotPassword);    // Feature 1: Forgot password
-router.post("/reset-password",  resetPassword);     // Feature 1: Reset with OTP
+// Validators run BEFORE controllers — invalid requests are rejected early
+router.post("/register",        validateRegister,        register);
+router.post("/login",           validateLogin,           login);
+router.post("/google",                                   googleAuth);
+router.post("/forgot-password", validateForgotPassword,  forgotPassword);
+router.post("/reset-password",  validateResetPassword,   resetPassword);
 
 // ── Protected ─────────────────────────────────────────────────────────────────
-router.get ("/me",       protect, getMe);
-router.put ("/profile",  protect, updateProfile);
-router.put ("/password", protect, changePassword);
+router.get ("/me",       protect,                          getMe);
+router.put ("/profile",  protect, validateProfile,         updateProfile);
+router.put ("/password", protect, validateChangePassword,  changePassword);
 
 module.exports = router;

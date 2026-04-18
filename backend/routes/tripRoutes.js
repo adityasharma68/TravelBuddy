@@ -9,6 +9,7 @@
 const express      = require("express");
 const ctrl         = require("../controllers/tripController");
 const { protect, adminOnly } = require("../middleware/authMiddleware");
+const { validateTrip } = require("../middleware/validate");
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.get("/requests/mine", protect, ctrl.getMyRequests);
 
 // ── Public & Protected Trip CRUD ──────────────────────────────────────────────
 router.get   ("/",    ctrl.getAllTrips);       // Public — anyone can browse
-router.post  ("/",    protect, ctrl.createTrip);
+router.post  ("/",    protect, validateTrip, ctrl.createTrip);
 router.get   ("/:id", ctrl.getTripById);
 router.put   ("/:id", protect, ctrl.updateTrip);
 router.delete("/:id", protect, ctrl.deleteTrip);

@@ -1,201 +1,235 @@
 // models/tripModel.js
 // ─────────────────────────────────────────────────────────────────────────────
-//  Trip Model — All database queries for trips and join_requests
+//  Trip Model — Mongoose schemas for trips and join_requests
 //
-//  Key design choices:
-//    • Tags are stored as JSON string in MySQL and parsed in JS
-//    • We JOIN users table to get host info alongside each trip
-//    • All queries are user-scoped (WHERE user_id = ?) for security
+//  MongoDB difference from SQL:
+//    • No JOIN — we use .populate() to embed user data into trip documents
+//    • Tags stored as a native array (no JSON.stringify needed)
+//    • req_count kept as a counter field on the trip document
 // ─────────────────────────────────────────────────────────────────────────────
 
-const db = require("../config/db");
+const mongoose = require("mongoose");
 
-// Reusable SELECT columns for trips (includes host info via JOIN)
-const TRIP_SELECT = `
-  t.id, t.user_id, t.destination, t.country, t.dates, t.duration,
-  t.spots, t.total_spots, t.trip_type, t.plan_type, t.description,
-  t.tags, t.budget, t.gradient, t.req_count,
-  DATE_FORMAT(t.created_at, '%b %d, %Y') AS posted_on,
-  u.name AS host, u.avatar AS host_av, u.color AS host_color
-`;
+// ── Trip Schema ───────────────────────────────────────────────────────────────
+const tripSchema = new mongoose.Schema(
+  {
+    user_id:     { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    destination: { type: String, required: true, trim: true },
+    country:     { type: String, required: true, trim: true },
+    dates:       { type: String, required: true },
+    duration:    { type: String, default: "" },
+    spots:       { type: Number, default: 1 },
+    total_spots: { type: Number, default: 1 },
+    trip_type:   { type: String, enum: ["Adventure","Cultural","Leisure"], default: "Adventure" },
+    plan_type:   { type: String, enum: ["luxury","moderate","budget"],     default: "moderate" },
+    description: { type: String, default: "" },
+    tags:        { type: [String], default: [] },          // native array — no JSON needed
+    budget:      { type: String, default: "" },
+    gradient:    { type: String, default: "" },
+    req_count:   { type: Number, default: 0 },
+  },
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+);
 
-// Helper: parse tags JSON string → array
-const parseTrip = (trip) => ({
-  ...trip,
-  tags: (() => {
-    try { return JSON.parse(trip.tags || "[]"); }
-    catch { return []; }
-  })(),
+tripSchema.virtual("posted_on").get(function () {
+  return this.createdAt
+    ? this.createdAt.toLocaleDateString("en-US", { month:"short", day:"2-digit", year:"numeric" })
+    : "";
 });
 
+// ── JoinRequest Schema ────────────────────────────────────────────────────────
+const joinRequestSchema = new mongoose.Schema(
+  {
+    trip_id:      { type: mongoose.Schema.Types.ObjectId, ref: "Trip",  required: true },
+    requester_id: { type: mongoose.Schema.Types.ObjectId, ref: "User",  required: true },
+    status:       { type: String, enum: ["pending","accepted","declined"], default: "pending" },
+  },
+  { timestamps: true }
+);
+
+// Unique constraint: one request per user per trip
+joinRequestSchema.index({ trip_id: 1, requester_id: 1 }, { unique: true });
+
+const Trip        = mongoose.model("Trip",        tripSchema);
+const JoinRequest = mongoose.model("JoinRequest", joinRequestSchema);
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helper: flatten a populated trip doc into the same shape the frontend expects
+// ─────────────────────────────────────────────────────────────────────────────
+const formatTrip = (doc) => {
+  const t   = doc.toObject ? doc.toObject() : { ...doc };
+  const usr = t.user_id || {};                             // populated User doc
+  return {
+    id:          t._id.toString(),
+    user_id:     typeof usr === "object" ? usr._id?.toString() : usr.toString(),
+    destination: t.destination,
+    country:     t.country,
+    dates:       t.dates,
+    duration:    t.duration,
+    spots:       t.spots,
+    total_spots: t.total_spots,
+    trip_type:   t.trip_type,
+    plan_type:   t.plan_type,
+    description: t.description,
+    tags:        t.tags || [],
+    budget:      t.budget,
+    gradient:    t.gradient,
+    req_count:   t.req_count,
+    posted_on:   t.posted_on || "",
+    // Host info (populated from users collection)
+    host:        usr.name    || "",
+    host_av:     usr.avatar  || "",
+    host_color:  usr.color   || "#1a3d2b",
+  };
+};
+
+const POPULATE_USER = { path: "user_id", select: "name avatar color" };
+
+const GRADIENTS = [
+  "linear-gradient(135deg,#1a3d2b,#0a1f12)",
+  "linear-gradient(135deg,#2e6b8a,#1a3c52)",
+  "linear-gradient(135deg,#6b4c1a,#3d2a0a)",
+  "linear-gradient(135deg,#8a3a1a,#4d1f0a)",
+  "linear-gradient(135deg,#1a6b4a,#0d3d28)",
+  "linear-gradient(135deg,#4a1a6b,#260d3d)",
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 const TripModel = {
 
   // ── getAll ──────────────────────────────────────────────────────────────────
-  // Fetch all trips with optional filters: trip_type, plan_type, search query.
-  // Used by the Browse page.
   getAll: async ({ type, plan, q }) => {
-    let sql    = `SELECT ${TRIP_SELECT} FROM trips t JOIN users u ON t.user_id = u.id WHERE 1=1`;
-    const params = [];
-
-    if (type && type !== "All") {
-      sql += " AND t.trip_type = ?";
-      params.push(type);
-    }
-    if (plan && plan !== "all") {
-      sql += " AND t.plan_type = ?";
-      params.push(plan);
-    }
+    const filter = {};
+    if (type && type !== "All") filter.trip_type = type;
+    if (plan && plan !== "all") filter.plan_type = plan;
     if (q) {
-      // Search across destination and country columns
-      sql += " AND (t.destination LIKE ? OR t.country LIKE ? OR u.name LIKE ?)";
-      params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+      filter.$or = [
+        { destination: { $regex: q, $options: "i" } },
+        { country:     { $regex: q, $options: "i" } },
+      ];
     }
-
-    sql += " ORDER BY t.created_at DESC";
-    const [rows] = await db.query(sql, params);
-    return rows.map(parseTrip);
+    const docs = await Trip.find(filter).populate(POPULATE_USER).sort({ createdAt: -1 });
+    return docs.map(formatTrip);
   },
 
   // ── getById ─────────────────────────────────────────────────────────────────
   getById: async (id) => {
-    const [rows] = await db.query(
-      `SELECT ${TRIP_SELECT} FROM trips t JOIN users u ON t.user_id = u.id WHERE t.id = ?`,
-      [id]
-    );
-    return rows[0] ? parseTrip(rows[0]) : null;
+    try {
+      const doc = await Trip.findById(id).populate(POPULATE_USER);
+      return doc ? formatTrip(doc) : null;
+    } catch { return null; }
   },
 
   // ── getByUserId ─────────────────────────────────────────────────────────────
-  // Fetch all trips posted by a specific user (My Trips tab).
   getByUserId: async (userId) => {
-    const [rows] = await db.query(
-      `SELECT ${TRIP_SELECT} FROM trips t JOIN users u ON t.user_id = u.id
-       WHERE t.user_id = ? ORDER BY t.created_at DESC`,
-      [userId]
-    );
-    return rows.map(parseTrip);
+    const docs = await Trip.find({ user_id: userId }).populate(POPULATE_USER).sort({ createdAt: -1 });
+    return docs.map(formatTrip);
+  },
+
+  // ── getAllAdmin ──────────────────────────────────────────────────────────────
+  getAllAdmin: async () => {
+    const docs = await Trip.find().populate(POPULATE_USER).sort({ createdAt: -1 });
+    return docs.map(formatTrip);
   },
 
   // ── create ──────────────────────────────────────────────────────────────────
   create: async (data) => {
-    const GRADIENTS = [
-      "linear-gradient(135deg,#1a3d2b,#0a1f12)",
-      "linear-gradient(135deg,#2e6b8a,#1a3c52)",
-      "linear-gradient(135deg,#6b4c1a,#3d2a0a)",
-      "linear-gradient(135deg,#8a3a1a,#4d1f0a)",
-      "linear-gradient(135deg,#1a6b4a,#0d3d28)",
-      "linear-gradient(135deg,#4a1a6b,#260d3d)",
-    ];
-    const gradient = GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)];
-    const spots    = parseInt(data.spots) || 1;
-    const tags     = JSON.stringify(Array.isArray(data.tags) ? data.tags : []);
-
-    const [result] = await db.query(
-      `INSERT INTO trips
-         (user_id, destination, country, dates, duration, spots, total_spots,
-          trip_type, plan_type, description, tags, budget, gradient)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        data.userId, data.destination, data.country, data.dates,
-        data.duration || "", spots, spots,
-        data.trip_type || "Adventure", data.plan_type || "moderate",
-        data.description || "", tags, data.budget || "", gradient,
-      ]
-    );
-    return result.insertId;
-  },
-
-  // ── update ──────────────────────────────────────────────────────────────────
-  update: async (id, data) => {
-    const tags = JSON.stringify(Array.isArray(data.tags) ? data.tags : []);
-    await db.query(
-      `UPDATE trips SET destination=?, country=?, dates=?, duration=?,
-        spots=?, trip_type=?, plan_type=?, description=?, tags=?, budget=?
-       WHERE id=?`,
-      [
-        data.destination, data.country, data.dates, data.duration,
-        parseInt(data.spots) || 1, data.trip_type, data.plan_type,
-        data.description, tags, data.budget, id,
-      ]
-    );
+    const spots = parseInt(data.spots) || 1;
+    const doc   = await Trip.create({
+      user_id:     data.userId,
+      destination: data.destination,
+      country:     data.country,
+      dates:       data.dates,
+      duration:    data.duration || "",
+      spots,
+      total_spots: spots,
+      trip_type:   data.trip_type  || "Adventure",
+      plan_type:   data.plan_type  || "moderate",
+      description: data.description || "",
+      tags:        Array.isArray(data.tags) ? data.tags : [],
+      budget:      data.budget || "",
+      gradient:    GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)],
+    });
+    return doc._id.toString();
   },
 
   // ── delete ──────────────────────────────────────────────────────────────────
   delete: async (id) => {
-    await db.query("DELETE FROM trips WHERE id=?", [id]);
+    await Trip.findByIdAndDelete(id);
+    await JoinRequest.deleteMany({ trip_id: id });
   },
 
   // ── getUserIdByTripId ────────────────────────────────────────────────────────
-  // Quick ownership check — returns the user_id who owns a trip.
   getUserIdByTripId: async (tripId) => {
-    const [rows] = await db.query("SELECT user_id FROM trips WHERE id=?", [tripId]);
-    return rows[0]?.user_id || null;
+    try {
+      const doc = await Trip.findById(tripId, "user_id");
+      return doc?.user_id?.toString() || null;
+    } catch { return null; }
   },
 
   // ── createJoinRequest ───────────────────────────────────────────────────────
-  // Insert a join request; will throw on duplicate (UNIQUE constraint).
   createJoinRequest: async (tripId, requesterId) => {
-    await db.query(
-      "INSERT INTO join_requests (trip_id, requester_id) VALUES (?, ?)",
-      [tripId, requesterId]
-    );
-    // Increment the request counter shown on the trip card
-    await db.query("UPDATE trips SET req_count = req_count + 1 WHERE id=?", [tripId]);
+    await JoinRequest.create({ trip_id: tripId, requester_id: requesterId });
+    await Trip.findByIdAndUpdate(tripId, { $inc: { req_count: 1 } });
   },
 
   // ── getJoinRequests ─────────────────────────────────────────────────────────
-  // For the trip owner: see who has requested to join a specific trip.
   getJoinRequests: async (tripId) => {
-    const [rows] = await db.query(
-      `SELECT jr.id, jr.status, DATE_FORMAT(jr.created_at,'%b %d') AS requested_on,
-              u.id AS user_id, u.name, u.email, u.avatar, u.color, u.age, u.bio
-       FROM join_requests jr
-       JOIN users u ON jr.requester_id = u.id
-       WHERE jr.trip_id = ?
-       ORDER BY jr.created_at DESC`,
-      [tripId]
-    );
-    return rows;
+    const docs = await JoinRequest.find({ trip_id: tripId })
+      .populate({ path: "requester_id", select: "name email avatar color age bio" })
+      .sort({ createdAt: -1 });
+
+    return docs.map(doc => ({
+      id:           doc._id.toString(),
+      status:       doc.status,
+      requested_on: doc.createdAt.toLocaleDateString("en-US", { month:"short", day:"2-digit" }),
+      user_id:      doc.requester_id._id.toString(),
+      name:         doc.requester_id.name,
+      email:        doc.requester_id.email,
+      avatar:       doc.requester_id.avatar,
+      color:        doc.requester_id.color,
+      age:          doc.requester_id.age,
+      bio:          doc.requester_id.bio,
+    }));
   },
 
   // ── updateJoinRequestStatus ─────────────────────────────────────────────────
   updateJoinRequestStatus: async (requestId, tripId, status) => {
-    await db.query(
-      "UPDATE join_requests SET status=? WHERE id=? AND trip_id=?",
-      [status, requestId, tripId]
+    await JoinRequest.findOneAndUpdate(
+      { _id: requestId, trip_id: tripId },
+      { status }
     );
-    // If accepted, reduce available spots by 1
     if (status === "accepted") {
-      await db.query("UPDATE trips SET spots = GREATEST(0, spots - 1) WHERE id=?", [tripId]);
+      await Trip.findByIdAndUpdate(tripId, { $inc: { spots: -1 } });
     }
   },
 
   // ── getMyRequests ────────────────────────────────────────────────────────────
-  // For a user: see all the trips they've requested to join.
   getMyRequests: async (userId) => {
-    const [rows] = await db.query(
-      `SELECT jr.id, jr.status, DATE_FORMAT(jr.created_at,'%b %d') AS requested_on,
-              t.id AS trip_id, t.destination, t.country, t.dates, t.plan_type,
-              u.name AS host
-       FROM join_requests jr
-       JOIN trips t ON jr.trip_id = t.id
-       JOIN users u ON t.user_id = u.id
-       WHERE jr.requester_id = ?
-       ORDER BY jr.created_at DESC`,
-      [userId]
-    );
-    return rows;
+    const docs = await JoinRequest.find({ requester_id: userId })
+      .populate({ path: "trip_id", populate: { path: "user_id", select: "name" } })
+      .sort({ createdAt: -1 });
+
+    return docs.map(doc => ({
+      id:           doc._id.toString(),
+      status:       doc.status,
+      requested_on: doc.createdAt.toLocaleDateString("en-US", { month:"short", day:"2-digit" }),
+      trip_id:      doc.trip_id._id.toString(),
+      destination:  doc.trip_id.destination,
+      country:      doc.trip_id.country,
+      dates:        doc.trip_id.dates,
+      plan_type:    doc.trip_id.plan_type,
+      host:         doc.trip_id.user_id?.name || "",
+    }));
   },
 
   // ── hasRequested ────────────────────────────────────────────────────────────
-  // Check if a user already sent a join request for a trip.
   hasRequested: async (tripId, userId) => {
-    const [rows] = await db.query(
-      "SELECT id FROM join_requests WHERE trip_id=? AND requester_id=?",
-      [tripId, userId]
-    );
-    return rows.length > 0;
+    const doc = await JoinRequest.findOne({ trip_id: tripId, requester_id: userId });
+    return !!doc;
   },
 };
 
 module.exports = TripModel;
+module.exports.Trip        = Trip;
+module.exports.JoinRequest = JoinRequest;

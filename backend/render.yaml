@@ -1,0 +1,16 @@
+# render.yaml — Render deployment configuration
+# Commit this file to your repo root so Render auto-detects settings.
+services:
+  - type: web
+    name: travel-buddy-api
+    runtime: node
+    region: singapore          # closest to India — change to oregon/frankfurt as needed
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      # All secrets are set manually in Render dashboard — not in this file

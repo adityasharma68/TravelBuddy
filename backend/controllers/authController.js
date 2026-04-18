@@ -81,10 +81,10 @@ const login = async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
 
+    // findByEmail returns raw Mongoose doc (includes password hash)
     const user = await UserModel.findByEmail(email);
     if (!user) return res.status(401).json({ error: "Invalid email or password." });
 
-    // If account was created via Google only, there is no password
     if (!user.password) {
       return res.status(401).json({
         error: "This account uses Google Sign-In. Please click 'Continue with Google'.",
@@ -95,9 +95,10 @@ const login = async (req, res) => {
     if (!match) return res.status(401).json({ error: "Invalid email or password." });
     if (user.status === "suspended") return res.status(403).json({ error: "Account suspended. Contact admin." });
 
-    const { password: _, ...safe } = user;
-    const token = signToken(user.id, user.role);
-    res.json({ token, user: safe });
+    // Return safe user (findById strips password)
+    const safeUser = await UserModel.findById(user._id.toString());
+    const token    = signToken(user._id.toString(), user.role);
+    res.json({ token, user: safeUser });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Login failed. Please try again." });
@@ -317,10 +318,12 @@ const changePassword = async (req, res) => {
     if (!currentPassword || !newPassword) return res.status(400).json({ error: "Both passwords required." });
     if (newPassword.length < 6) return res.status(400).json({ error: "New password must be 6+ chars." });
 
-    const user = await UserModel.findByEmail((await UserModel.findById(req.user.id)).email);
-    if (!user.password) return res.status(400).json({ error: "Google accounts don't have a password to change here." });
+    // findById returns safe object (no password). We need raw doc for password check.
+    const safeUser = await UserModel.findById(req.user.id);
+    const rawUser  = await UserModel.findByEmail(safeUser.email);
+    if (!rawUser.password) return res.status(400).json({ error: "Google accounts don't have a password to change here." });
 
-    const match = await bcrypt.compare(currentPassword, user.password);
+    const match = await bcrypt.compare(currentPassword, rawUser.password);
     if (!match) return res.status(401).json({ error: "Current password is incorrect." });
 
     const hashed = await bcrypt.hash(newPassword, 10);

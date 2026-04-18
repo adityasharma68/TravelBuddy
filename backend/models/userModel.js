@@ -1,173 +1,191 @@
 // models/userModel.js
 // ─────────────────────────────────────────────────────────────────────────────
-//  User Model — All database queries related to users
+//  User Model — Mongoose Schema + all user-related DB operations
 //
-//  New columns added for Feature 1 & 2:
-//    google_id      — stores Google OAuth user ID (nullable, unique)
-//    avatar_url     — Cloudinary URL for profile picture (nullable)
-//    reset_token    — hashed OTP for forgot-password flow (nullable)
-//    reset_expires  — expiry timestamp for the reset OTP
+//  MongoDB stores documents in collections (like rows in a table).
+//  Mongoose adds a schema so each document has a defined shape.
+//
+//  Key difference from SQL version:
+//    • No manual SQL — Mongoose methods replace raw queries
+//    • _id is auto-generated (ObjectId), we add a virtual .id getter
+//    • No separate JOIN — user info is embedded or referenced
 // ─────────────────────────────────────────────────────────────────────────────
 
-const db = require("../config/db");
+const mongoose = require("mongoose");
 
-const SAFE_COLS = `
-  id, name, email, role, age, bio, status, avatar, color,
-  avatar_url, google_id IS NOT NULL AS has_google,
-  trips_count, DATE_FORMAT(created_at, '%b %d, %Y') AS joined
-`;
+// ── Schema definition ─────────────────────────────────────────────────────────
+const userSchema = new mongoose.Schema(
+  {
+    name:          { type: String, required: true, trim: true },
+    email:         { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password:      { type: String, default: null },       // null for Google-only accounts
+    role:          { type: String, enum: ["user","admin"], default: "user" },
+    age:           { type: Number, default: 25 },
+    bio:           { type: String, default: "" },
+    status:        { type: String, enum: ["active","suspended"], default: "active" },
+    avatar:        { type: String, default: "" },          // 2-letter initials
+    color:         { type: String, default: "#1a3d2b" },   // avatar background colour
+    avatar_url:    { type: String, default: null },         // Cloudinary URL
+    google_id:     { type: String, default: null, unique: true, sparse: true },
+    reset_token:   { type: String, default: null },         // hashed OTP
+    reset_expires: { type: Date,   default: null },
+    trips_count:   { type: Number, default: 0 },
+  },
+  {
+    timestamps: true,    // adds createdAt and updatedAt automatically
+    toJSON:  { virtuals: true },
+    toObject:{ virtuals: true },
+  }
+);
 
+// ── Virtual: format joined date like MySQL DATE_FORMAT ────────────────────────
+userSchema.virtual("joined").get(function () {
+  return this.createdAt
+    ? this.createdAt.toLocaleDateString("en-US", { month:"short", day:"2-digit", year:"numeric" })
+    : "";
+});
+
+// ── Virtual: has_google flag used by frontend ─────────────────────────────────
+userSchema.virtual("has_google").get(function () {
+  return !!this.google_id;
+});
+
+const User = mongoose.model("User", userSchema);
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helper: convert a Mongoose document to a safe plain object
+//  Removes password and internal fields before sending to the client.
+// ─────────────────────────────────────────────────────────────────────────────
+const toSafe = (doc) => {
+  if (!doc) return null;
+  const obj = doc.toObject ? doc.toObject() : { ...doc };
+  delete obj.password;
+  delete obj.reset_token;
+  delete obj.reset_expires;
+  delete obj.__v;
+  // Normalise _id → id so the frontend doesn't need to change
+  obj.id = obj._id.toString();
+  return obj;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  UserModel — same public interface as the old SQL model
+//  Controllers call these methods and receive plain objects (not Mongoose docs).
+// ─────────────────────────────────────────────────────────────────────────────
 const UserModel = {
 
-  // ── findByEmail ─────────────────────────────────────────────────────────────
   findByEmail: async (email) => {
-    const [rows] = await db.query(
-      "SELECT * FROM users WHERE email = ?",
-      [email.toLowerCase().trim()]
-    );
-    return rows[0] || null;
+    const doc = await User.findOne({ email: email.toLowerCase().trim() });
+    return doc || null;  // return raw doc so password hash is accessible
   },
 
-  // ── findById ────────────────────────────────────────────────────────────────
   findById: async (id) => {
-    const [rows] = await db.query(
-      `SELECT ${SAFE_COLS} FROM users WHERE id = ?`, [id]
-    );
-    return rows[0] || null;
+    try {
+      const doc = await User.findById(id);
+      return toSafe(doc);
+    } catch { return null; }
   },
 
-  // ── findByGoogleId ──────────────────────────────────────────────────────────
-  // Used during Google OAuth — look up a user by their Google account ID.
   findByGoogleId: async (googleId) => {
-    const [rows] = await db.query(
-      "SELECT * FROM users WHERE google_id = ?", [googleId]
-    );
-    return rows[0] || null;
+    return await User.findOne({ google_id: googleId }) || null;
   },
 
-  // ── create ──────────────────────────────────────────────────────────────────
   create: async ({ name, email, password, age, bio, avatar, color, googleId, avatarUrl }) => {
-    const [result] = await db.query(
-      `INSERT INTO users (name, email, password, age, bio, avatar, color, google_id, avatar_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        name.trim(),
-        email.toLowerCase().trim(),
-        password || null,     // null for Google-only users (no password)
-        age  || 25,
-        bio  || "",
-        avatar,
-        color,
-        googleId   || null,
-        avatarUrl  || null,
-      ]
-    );
-    return result.insertId;
+    const doc = await User.create({
+      name, email, password: password || null,
+      age: parseInt(age) || 25,
+      bio: bio || "",
+      avatar, color,
+      google_id: googleId  || undefined,
+      avatar_url: avatarUrl || undefined,
+    });
+    return doc._id.toString();
   },
 
-  // ── linkGoogleId ─────────────────────────────────────────────────────────────
-  // Called when an existing email-password user logs in with Google for the
-  // first time — links their Google account to the existing record.
   linkGoogleId: async (userId, googleId, avatarUrl) => {
-    await db.query(
-      "UPDATE users SET google_id = ?, avatar_url = COALESCE(avatar_url, ?) WHERE id = ?",
-      [googleId, avatarUrl, userId]
-    );
+    await User.findByIdAndUpdate(userId, {
+      google_id:  googleId,
+      $set: { avatar_url: avatarUrl },
+    }, { new: false });
   },
 
-  // ── getAll ──────────────────────────────────────────────────────────────────
   getAll: async () => {
-    const [rows] = await db.query(
-      `SELECT ${SAFE_COLS} FROM users WHERE role != 'admin' ORDER BY created_at DESC`
-    );
-    return rows;
+    const docs = await User.find({ role: { $ne: "admin" } }).sort({ createdAt: -1 });
+    return docs.map(toSafe);
   },
 
-  // ── getStats ────────────────────────────────────────────────────────────────
   getStats: async () => {
-    const [[total]]  = await db.query("SELECT COUNT(*) AS c FROM users WHERE role='user'");
-    const [[active]] = await db.query("SELECT COUNT(*) AS c FROM users WHERE role='user' AND status='active'");
-    const [[susp]]   = await db.query("SELECT COUNT(*) AS c FROM users WHERE role='user' AND status='suspended'");
-    const [[trips]]  = await db.query("SELECT COUNT(*) AS c FROM trips");
-    const [[reqs]]   = await db.query("SELECT SUM(req_count) AS s FROM trips");
+    const [total, active, suspended, tripAgg] = await Promise.all([
+      User.countDocuments({ role: "user" }),
+      User.countDocuments({ role: "user", status: "active" }),
+      User.countDocuments({ role: "user", status: "suspended" }),
+      // Import Trip model lazily to avoid circular-require issues
+      mongoose.model("Trip").countDocuments(),
+    ]);
+    const reqAgg = await mongoose.model("Trip").aggregate([
+      { $group: { _id: null, total: { $sum: "$req_count" } } }
+    ]);
     return {
-      totalUsers: total.c, activeUsers: active.c,
-      suspended:  susp.c,  totalTrips:  trips.c,
-      totalRequests: reqs.s || 0,
+      totalUsers: total,
+      activeUsers: active,
+      suspended,
+      totalTrips: tripAgg,
+      totalRequests: reqAgg[0]?.total || 0,
     };
   },
 
-  // ── update ──────────────────────────────────────────────────────────────────
+  // Admin: update any field
   update: async (id, { name, email, age, bio, status, avatar }) => {
-    await db.query(
-      `UPDATE users SET name=?, email=?, age=?, bio=?, status=?, avatar=? WHERE id=?`,
-      [name.trim(), email.toLowerCase().trim(), age || 25, bio || "", status, avatar, id]
-    );
+    await User.findByIdAndUpdate(id, { name: name.trim(), email: email.toLowerCase(), age, bio, status, avatar });
   },
 
-  // ── updateStatus ────────────────────────────────────────────────────────────
   updateStatus: async (id, status) => {
-    await db.query("UPDATE users SET status=? WHERE id=?", [status, id]);
+    await User.findByIdAndUpdate(id, { status });
   },
 
-  // ── updateProfile ───────────────────────────────────────────────────────────
   updateProfile: async (id, { name, age, bio, avatar }) => {
-    await db.query(
-      "UPDATE users SET name=?, age=?, bio=?, avatar=? WHERE id=?",
-      [name.trim(), age || 25, bio || "", avatar, id]
-    );
+    await User.findByIdAndUpdate(id, { name: name.trim(), age, bio, avatar });
   },
 
-  // ── updateAvatar ─────────────────────────────────────────────────────────────
-  // Saves the Cloudinary URL returned after a successful image upload.
   updateAvatar: async (id, avatarUrl) => {
-    await db.query("UPDATE users SET avatar_url = ? WHERE id = ?", [avatarUrl, id]);
+    await User.findByIdAndUpdate(id, { avatar_url: avatarUrl });
   },
 
-  // ── updatePassword ──────────────────────────────────────────────────────────
   updatePassword: async (id, hashedPassword) => {
-    await db.query("UPDATE users SET password = ? WHERE id = ?", [hashedPassword, id]);
+    await User.findByIdAndUpdate(id, { password: hashedPassword });
   },
 
-  // ── saveResetToken ──────────────────────────────────────────────────────────
-  // Store a hashed 6-digit OTP and its 15-minute expiry for password reset.
   saveResetToken: async (email, hashedToken, expiresAt) => {
-    await db.query(
-      "UPDATE users SET reset_token = ?, reset_expires = ? WHERE email = ?",
-      [hashedToken, expiresAt, email.toLowerCase()]
+    await User.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      { reset_token: hashedToken, reset_expires: expiresAt }
     );
   },
 
-  // ── findByResetToken ────────────────────────────────────────────────────────
-  // Find a user with a valid (non-expired) reset token.
   findByResetToken: async (email) => {
-    const [rows] = await db.query(
-      `SELECT id, email, reset_token, reset_expires
-       FROM users WHERE email = ? AND reset_expires > NOW()`,
-      [email.toLowerCase()]
-    );
-    return rows[0] || null;
+    return await User.findOne({
+      email:          email.toLowerCase(),
+      reset_expires:  { $gt: new Date() },
+    }) || null;
   },
 
-  // ── clearResetToken ─────────────────────────────────────────────────────────
   clearResetToken: async (id) => {
-    await db.query(
-      "UPDATE users SET reset_token = NULL, reset_expires = NULL WHERE id = ?",
-      [id]
-    );
+    await User.findByIdAndUpdate(id, { reset_token: null, reset_expires: null });
   },
 
-  // ── delete ──────────────────────────────────────────────────────────────────
   delete: async (id) => {
-    await db.query("DELETE FROM users WHERE id=? AND role != 'admin'", [id]);
+    await User.findOneAndDelete({ _id: id, role: { $ne: "admin" } });
   },
 
   incrementTripCount: async (id) => {
-    await db.query("UPDATE users SET trips_count = trips_count + 1 WHERE id=?", [id]);
+    await User.findByIdAndUpdate(id, { $inc: { trips_count: 1 } });
   },
+
   decrementTripCount: async (id) => {
-    await db.query("UPDATE users SET trips_count = GREATEST(0, trips_count - 1) WHERE id=?", [id]);
+    await User.findByIdAndUpdate(id, { $inc: { trips_count: -1 } });
   },
 };
 
 module.exports = UserModel;
+module.exports.User = User;      // export raw model for seeding
+module.exports.toSafe = toSafe;

@@ -11,7 +11,12 @@
 import axios from "axios";
 
 // Axios instance — base URL is /api (proxied to Express in dev via vite.config.js)
-const api = axios.create({ baseURL: "/api" });
+// In development:  Vite proxies /api → http://localhost:5000/api  (via vite.config.js)
+// In production:    VITE_API_URL = https://your-backend.onrender.com/api
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "/api",
+  timeout: 15000,   // 15s timeout — accounts for Render free-tier cold start
+});
 
 // ── Request Interceptor ────────────────────────────────────────────────────────
 // Automatically attach the JWT from localStorage to every request header.
