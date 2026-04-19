@@ -116,9 +116,21 @@ const login = async (req, res) => {
 //    4. If user exists by email → link google_id to existing account
 //    5. If new → create account (no password needed)
 // ─────────────────────────────────────────────────────────────────────────────
+const { OAuth2Client } = require("google-auth-library");
+
 const googleAuth = async (req, res) => {
   try {
-    const { googleId, email, name, picture, accessToken } = req.body;
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ error: "Google credential required." });
+
+    // Verify the ID token with Google
+    const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket  = await client.verifyIdToken({
+      idToken:  credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload  = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
 
     // Verify the access token by fetching user info from Google
     // This confirms the token is valid and belongs to this user

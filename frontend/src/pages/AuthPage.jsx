@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState, useEffect } from "react";
-import { useGoogleLogin }      from "@react-oauth/google";
+import { GoogleLogin } from "@react-oauth/google";
 import { useAuth }             from "../context/AuthContext";
 import {
   loginUser, registerUser, googleLogin,
@@ -264,40 +264,23 @@ export default function AuthPage({ showToast }) {
 
   // ── Google Sign-In ─────────────────────────────────────────────────────────
   // useGoogleLogin triggers the Google popup and returns a credential (ID token).
-  const handleGoogleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      setGLoad(true); setError("");
-      try {
-        // The tokenResponse from useGoogleLogin gives access_token, not credential.
-        // We need to fetch user info and send to backend.
-        const userInfoRes = await fetch(
-          `https://www.googleapis.com/oauth2/v3/userinfo`,
-          { headers: { Authorization: `Bearer ${tokenResponse.access_token}` } }
-        );
-        const userInfo = await userInfoRes.json();
+  const handleGoogleSuccess = async (credentialResponse) => {
+  setGLoad(true); setError("");
+  try {
+    const { data } = await googleLogin({
+      credential: credentialResponse.credential,
+    });
+    loginCtx(data.token, data.user);
+    showToast(`Welcome, ${data.user.name.split(" ")[0]}! 🌍`);
+  } catch (err) {
+    setError(err.response?.data?.error || "Google sign-in failed. Please try again.");
+  } finally { setGLoad(false); }
+};
 
-        // Send to our backend which verifies and creates/finds the user.
-        // We pass the sub (Google ID) + profile info directly.
-        const { data } = await googleLogin({
-          googleId:  userInfo.sub,
-          email:     userInfo.email,
-          name:      userInfo.name,
-          picture:   userInfo.picture,
-          // Pass access token so backend can verify with Google
-          accessToken: tokenResponse.access_token,
-        });
-        loginCtx(data.token, data.user);
-        showToast(`Welcome, ${data.user.name.split(" ")[0]}! 🌍`);
-      } catch (err) {
-        setError(err.response?.data?.error || "Google sign-in failed. Please try again.");
-      } finally { setGLoad(false); }
-    },
-    onError: () => {
-      setError("Google sign-in was cancelled or failed.");
-      setGLoad(false);
-    },
-    flow: "implicit",
-  });
+const handleGoogleError = () => {
+  setError("Google sign-in was cancelled or failed.");
+  setGLoad(false);
+};
 
   const isSignUp = mode === "signup";
 
@@ -408,7 +391,7 @@ export default function AuthPage({ showToast }) {
               title="Sign In" subtitle="Welcome back, traveler!"
               error={!isSignUp?error:""} loading={loading&&!isSignUp}
               onSubmit={handleLogin} submitLabel="Sign In"
-              onGoogleClick={handleGoogleLogin} googleLoading={googleLoading}
+              onGoogleSuccess={handleGoogleSuccess} onGoogleError={handleGoogleError}
               forgotLink={<button type="button"
                 onClick={() => setShowForgot(true)}
                 className="text-xs text-gray-400 hover:text-amber-600 transition-colors
@@ -501,7 +484,7 @@ export default function AuthPage({ showToast }) {
 
 // ── FormPanel ─────────────────────────────────────────────────────────────────
 function FormPanel({ title, subtitle, children, error, loading, onSubmit, submitLabel,
-                     onGoogleClick, googleLoading, forgotLink }) {
+                     onGoogleSuccess, onGoogleError, forgotLink }) {
   return (
     <div className="flex flex-col items-center justify-center px-8 sm:px-12 py-10">
 
@@ -557,25 +540,17 @@ function FormPanel({ title, subtitle, children, error, loading, onSubmit, submit
       </button>
 
       {/* Google Sign-In button */}
-      <button type="button"
-        onClick={onGoogleClick}
-        disabled={googleLoading}
-        className="google-btn w-full py-3 rounded-2xl text-sm font-semibold text-gray-700
-                   flex items-center justify-center gap-2.5 transition-all duration-200
-                   cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{
-          background:"#fff",
-          border:"1.5px solid #e2e8f0",
-          boxShadow:"0 1px 4px rgba(0,0,0,.08)",
-        }}>
-        {googleLoading
-          ? <svg className="spin-svg w-4 h-4" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="10" stroke="#e2e8f0" strokeWidth="3"/>
-              <path d="M12 2a10 10 0 0 1 10 10" stroke="#1a3d2b" strokeWidth="3" strokeLinecap="round"/>
-            </svg>
-          : <GoogleIcon />}
-        {googleLoading ? "Connecting…" : "Continue with Google"}
-      </button>
+      <div className="w-full">
+  <GoogleLogin
+    onSuccess={onGoogleSuccess}
+    onError={onGoogleError}
+    width="100%"
+    shape="rectangular"
+    theme="outline"
+    text="continue_with"
+    useOneTap={false}
+  />
+</div>
 
       {/* OR divider */}
       <div className="flex items-center gap-3 my-3 w-full">
