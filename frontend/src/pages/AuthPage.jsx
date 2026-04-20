@@ -1,33 +1,15 @@
 // src/pages/AuthPage.jsx
-// ─────────────────────────────────────────────────────────────────────────────
-//  Auth Page — Login, Signup, Google OAuth, Forgot Password
-//
-//  Feature 1 additions:
-//    • Google Sign-In button (useGoogleLogin from @react-oauth/google)
-//    • Forgot Password flow (3 steps: enter email → enter OTP → new password)
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { useState, useEffect } from "react";
-import { GoogleLogin } from "@react-oauth/google";
+import { GoogleLogin }         from "@react-oauth/google";
 import { useAuth }             from "../context/AuthContext";
 import {
   loginUser, registerUser, googleLogin,
   forgotPassword, resetPassword,
 } from "../services/authService";
 
-// ── Google icon SVG ───────────────────────────────────────────────────────────
-const GoogleIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 48 48">
-    <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.5 13.3l7.8 6C12.3 13 17.7 9.5 24 9.5z"/>
-    <path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.9 7.2l7.6 5.9c4.5-4.1 7.1-10.2 7.1-17.1z"/>
-    <path fill="#FBBC05" d="M10.3 28.7A14.3 14.3 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.7l7.8-6z"/>
-    <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.6-5.9c-2.1 1.4-4.8 2.3-7.6 2.3-6.3 0-11.6-4.2-13.5-9.9l-7.8 6C6.6 42.6 14.6 48 24 48z"/>
-  </svg>
-);
-
-// ── Forgot Password — 3-step flow ─────────────────────────────────────────────
+// ── Forgot Password Modal ─────────────────────────────────────────────────────
 function ForgotPasswordModal({ onClose, showToast }) {
-  const [step, setStep]           = useState(1);   // 1=email, 2=OTP, 3=new password
+  const [step, setStep]           = useState(1);
   const [email, setEmail]         = useState("");
   const [otp, setOtp]             = useState("");
   const [newPass, setNewPass]     = useState("");
@@ -43,14 +25,13 @@ function ForgotPasswordModal({ onClose, showToast }) {
       showToast("Reset code sent! Check your inbox 📬");
       setStep(2);
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to send email. Check your address.");
+      setError(err.response?.data?.error || "Failed to send email.");
     } finally { setLoading(false); }
   };
 
   const handleVerifyOtp = () => {
     if (!otp.trim() || otp.length !== 6) { setError("Enter the 6-digit code from your email."); return; }
-    setError("");
-    setStep(3);
+    setError(""); setStep(3);
   };
 
   const handleResetPassword = async () => {
@@ -67,30 +48,23 @@ function ForgotPasswordModal({ onClose, showToast }) {
     } finally { setLoading(false); }
   };
 
-  const STEPS = ["Email", "Verify Code", "New Password"];
-
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4"
       style={{ background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-
       <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-bold text-gray-800"
-              style={{ fontFamily:"'Cormorant Garamond',serif" }}>
+            <h2 className="text-xl font-bold text-gray-800" style={{ fontFamily:"'Cormorant Garamond',serif" }}>
               Reset Password
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">Step {step} of 3 — {STEPS[step-1]}</p>
+            <p className="text-xs text-gray-400 mt-0.5">Step {step} of 3</p>
           </div>
           <button onClick={onClose}
             className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500
-                       flex items-center justify-center text-sm transition-colors
-                       cursor-pointer border-none">✕</button>
+                       flex items-center justify-center text-sm cursor-pointer border-none">✕</button>
         </div>
 
-        {/* Step indicator */}
         <div className="flex gap-2 mb-6">
           {[1,2,3].map(s => (
             <div key={s} className="flex-1 h-1.5 rounded-full transition-all duration-300"
@@ -98,113 +72,57 @@ function ForgotPasswordModal({ onClose, showToast }) {
           ))}
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="mb-4 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl
-                          text-sm text-red-700 flex items-start gap-2">
-            <span className="shrink-0">⚠️</span>{error}
+          <div className="mb-4 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-start gap-2">
+            <span>⚠️</span>{error}
           </div>
         )}
 
-        {/* Step 1: Email */}
         {step === 1 && (
           <div>
-            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
-              Your Email Address
-            </label>
-            <input
-              type="email"
-              className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50
-                         text-sm outline-none focus:border-forest-700 focus:bg-white
-                         transition-all duration-150 mb-5"
-              placeholder="you@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSendOtp()}
-            />
+            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Email Address</label>
+            <input type="email" className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-forest-700 focus:bg-white transition-all mb-5"
+              placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSendOtp()} />
             <button onClick={handleSendOtp} disabled={loading}
-              className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest
-                         text-white transition-all duration-200 cursor-pointer border-none
-                         disabled:opacity-60"
+              className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest text-white cursor-pointer border-none disabled:opacity-60"
               style={{ background:"linear-gradient(135deg,#1a3d2b,#2a5c40)" }}>
               {loading ? "Sending…" : "Send Reset Code →"}
             </button>
           </div>
         )}
 
-        {/* Step 2: OTP */}
         {step === 2 && (
           <div>
-            <p className="text-sm text-gray-500 mb-4">
-              We sent a 6-digit code to <strong>{email}</strong>.
-              Check your inbox (and spam folder).
-            </p>
-            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
-              6-Digit Reset Code
-            </label>
-            <input
-              type="text"
-              maxLength={6}
-              inputMode="numeric"
-              className="w-full px-4 py-4 rounded-2xl border border-gray-200 bg-gray-50
-                         text-center text-3xl font-black tracking-[0.4em] outline-none
-                         focus:border-forest-700 focus:bg-white transition-all duration-150 mb-5"
-              placeholder="______"
-              value={otp}
+            <p className="text-sm text-gray-500 mb-4">We sent a 6-digit code to <strong>{email}</strong>.</p>
+            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">6-Digit Code</label>
+            <input type="text" maxLength={6} inputMode="numeric"
+              className="w-full px-4 py-4 rounded-2xl border border-gray-200 bg-gray-50 text-center text-3xl font-black tracking-[0.4em] outline-none focus:border-forest-700 focus:bg-white transition-all mb-5"
+              placeholder="______" value={otp}
               onChange={e => setOtp(e.target.value.replace(/\D/g,""))}
-              onKeyDown={e => e.key === "Enter" && handleVerifyOtp()}
-            />
+              onKeyDown={e => e.key === "Enter" && handleVerifyOtp()} />
             <button onClick={handleVerifyOtp}
-              className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest
-                         text-white transition-all border-none cursor-pointer"
+              className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest text-white border-none cursor-pointer"
               style={{ background:"linear-gradient(135deg,#1a3d2b,#2a5c40)" }}>
               Verify Code →
-            </button>
-            <button onClick={() => { setStep(1); setError(""); }}
-              className="w-full mt-2 py-2 text-xs text-gray-400 hover:text-gray-600
-                         bg-transparent border-none cursor-pointer transition-colors">
-              ← Re-send to a different email
             </button>
           </div>
         )}
 
-        {/* Step 3: New password */}
         {step === 3 && (
           <div>
-            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
-              New Password
-            </label>
-            <input
-              type="password"
-              className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50
-                         text-sm outline-none focus:border-forest-700 focus:bg-white
-                         transition-all duration-150 mb-3"
-              placeholder="At least 6 characters"
-              value={newPass}
-              onChange={e => setNewPass(e.target.value)}
-            />
-            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
-              Confirm New Password
-            </label>
-            <input
-              type="password"
-              className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50
-                         text-sm outline-none focus:border-forest-700 focus:bg-white
-                         transition-all duration-150 mb-5"
-              placeholder="Repeat new password"
-              value={confirmPass}
-              onChange={e => setConfirm(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleResetPassword()}
-            />
-            {confirmPass && newPass !== confirmPass && (
-              <p className="text-xs text-red-500 font-semibold -mt-3 mb-3">✗ Passwords don't match</p>
-            )}
-            {confirmPass && newPass === confirmPass && (
-              <p className="text-xs text-green-600 font-semibold -mt-3 mb-3">✓ Passwords match</p>
-            )}
+            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">New Password</label>
+            <input type="password" className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-forest-700 focus:bg-white transition-all mb-3"
+              placeholder="At least 6 characters" value={newPass} onChange={e => setNewPass(e.target.value)} />
+            <label className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Confirm Password</label>
+            <input type="password" className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-forest-700 focus:bg-white transition-all mb-2"
+              placeholder="Repeat new password" value={confirmPass} onChange={e => setConfirm(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleResetPassword()} />
+            {confirmPass && <p className={`text-xs mb-3 font-semibold ${newPass === confirmPass ? "text-green-600" : "text-red-500"}`}>
+              {newPass === confirmPass ? "✓ Passwords match" : "✗ Passwords don't match"}
+            </p>}
             <button onClick={handleResetPassword} disabled={loading}
-              className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest
-                         text-white transition-all border-none cursor-pointer disabled:opacity-60"
+              className="w-full py-3.5 rounded-2xl text-sm font-black uppercase tracking-widest text-white border-none cursor-pointer disabled:opacity-60"
               style={{ background:"linear-gradient(135deg,#1a3d2b,#c9640a)" }}>
               {loading ? "Resetting…" : "Set New Password ✓"}
             </button>
@@ -235,7 +153,6 @@ export default function AuthPage({ showToast }) {
   const setL = (k) => (e) => setLoginForm(f  => ({ ...f, [k]: e.target.value }));
   const setS = (k) => (e) => setSignupForm(f => ({ ...f, [k]: e.target.value }));
 
-  // ── Email/password login ───────────────────────────────────────────────────
   const handleLogin = async () => {
     if (!loginForm.email || !loginForm.password) { setError("Email and password are required."); return; }
     setError(""); setLoading(true);
@@ -247,7 +164,6 @@ export default function AuthPage({ showToast }) {
     finally { setLoading(false); }
   };
 
-  // ── Email/password signup ──────────────────────────────────────────────────
   const handleSignup = async () => {
     if (!signupForm.name || !signupForm.email || !signupForm.password) {
       setError("Name, email and password are required."); return;
@@ -262,25 +178,22 @@ export default function AuthPage({ showToast }) {
     finally { setLoading(false); }
   };
 
-  // ── Google Sign-In ─────────────────────────────────────────────────────────
-  // useGoogleLogin triggers the Google popup and returns a credential (ID token).
+  // ── Google Sign-In — uses credential (ID token) flow, no popup ─────────────
   const handleGoogleSuccess = async (credentialResponse) => {
-  setGLoad(true); setError("");
-  try {
-    const { data } = await googleLogin({
-      credential: credentialResponse.credential,
-    });
-    loginCtx(data.token, data.user);
-    showToast(`Welcome, ${data.user.name.split(" ")[0]}! 🌍`);
-  } catch (err) {
-    setError(err.response?.data?.error || "Google sign-in failed. Please try again.");
-  } finally { setGLoad(false); }
-};
+    setGLoad(true); setError("");
+    try {
+      const { data } = await googleLogin({ credential: credentialResponse.credential });
+      loginCtx(data.token, data.user);
+      showToast(`Welcome, ${data.user.name.split(" ")[0]}! 🌍`);
+    } catch (err) {
+      setError(err.response?.data?.error || "Google sign-in failed. Please try again.");
+    } finally { setGLoad(false); }
+  };
 
-const handleGoogleError = () => {
-  setError("Google sign-in was cancelled or failed.");
-  setGLoad(false);
-};
+  const handleGoogleError = () => {
+    setError("Google sign-in was cancelled or failed.");
+    setGLoad(false);
+  };
 
   const isSignUp = mode === "signup";
 
@@ -303,28 +216,24 @@ const handleGoogleError = () => {
         .auth-container { position:relative; }
         .sign-in-panel {
           position:absolute; top:0; left:0; width:50%; height:100%;
-          transition:transform .65s cubic-bezier(.77,0,.175,1);
-          z-index:2; overflow-y:auto;
+          transition:transform .65s cubic-bezier(.77,0,.175,1); z-index:2; overflow-y:auto;
         }
         .auth-container.signup .sign-in-panel { transform:translateX(100%); }
         .sign-up-panel {
           position:absolute; top:0; left:0; width:50%; height:100%;
           opacity:0; z-index:1; overflow-y:auto;
-          transition:transform .65s cubic-bezier(.77,0,.175,1),
-                     opacity   .65s cubic-bezier(.77,0,.175,1);
+          transition:transform .65s cubic-bezier(.77,0,.175,1), opacity .65s cubic-bezier(.77,0,.175,1);
         }
         .auth-container.signup .sign-up-panel { transform:translateX(100%); opacity:1; z-index:5; }
         .overlay-wrap {
           position:absolute; top:0; left:50%; width:50%; height:100%;
-          z-index:100; overflow:hidden;
-          transition:transform .65s cubic-bezier(.77,0,.175,1);
+          z-index:100; overflow:hidden; transition:transform .65s cubic-bezier(.77,0,.175,1);
         }
         .auth-container.signup .overlay-wrap { transform:translateX(-100%); }
         .overlay-inner {
           position:relative; left:-100%; width:200%; height:100%;
           background:linear-gradient(135deg,#1a3d2b 0%,#2a5c40 30%,#c9640a 70%,#f97316 100%);
-          background-size:200% 200%;
-          animation:shimmerBg 8s ease infinite;
+          background-size:200% 200%; animation:shimmerBg 8s ease infinite;
           transition:transform .65s cubic-bezier(.77,0,.175,1);
         }
         .auth-container.signup .overlay-inner { transform:translateX(50%); }
@@ -338,14 +247,8 @@ const handleGoogleError = () => {
         .overlay-right { right:0; }
         .auth-container.signup .overlay-left  { transform:translateX(0); }
         .auth-container.signup .overlay-right { transform:translateX(15%); }
-        .auth-input:focus {
-          border-color:#f97316 !important;
-          box-shadow:0 0 0 3px rgba(249,115,22,.18) !important;
-          background:#fff !important; outline:none;
-        }
+        .auth-input:focus { border-color:#f97316 !important; box-shadow:0 0 0 3px rgba(249,115,22,.18) !important; background:#fff !important; outline:none; }
         .auth-btn:active { transform:scale(.97); }
-        .google-btn:hover { background:#f8fafc !important; box-shadow:0 2px 12px rgba(0,0,0,.12) !important; }
-        .google-btn:active { transform:scale(.97); }
       `}</style>
 
       <div className="min-h-screen flex items-center justify-center relative overflow-hidden px-4 py-8"
@@ -353,9 +256,9 @@ const handleGoogleError = () => {
 
         {/* Glow orbs */}
         {[
-          { w:500,h:500,top:"-120px",left:"-90px",  c:"rgba(249,115,22,.10)" },
-          { w:580,h:580,bottom:"-150px",right:"-80px",c:"rgba(14,165,233,.07)" },
-          { w:340,h:340,top:"38%",left:"32%",       c:"rgba(26,61,43,.40)"   },
+          {w:500,h:500,top:"-120px",left:"-90px",c:"rgba(249,115,22,.10)"},
+          {w:580,h:580,bottom:"-150px",right:"-80px",c:"rgba(14,165,233,.07)"},
+          {w:340,h:340,top:"38%",left:"32%",c:"rgba(26,61,43,.40)"},
         ].map((o,i) => (
           <div key={i} className="absolute pointer-events-none rounded-full" style={{
             width:o.w,height:o.h,top:o.top,left:o.left,bottom:o.bottom,right:o.right,
@@ -391,14 +294,16 @@ const handleGoogleError = () => {
               title="Sign In" subtitle="Welcome back, traveler!"
               error={!isSignUp?error:""} loading={loading&&!isSignUp}
               onSubmit={handleLogin} submitLabel="Sign In"
-              onGoogleSuccess={handleGoogleSuccess} onGoogleError={handleGoogleError}
-              forgotLink={<button type="button"
-                onClick={() => setShowForgot(true)}
-                className="text-xs text-gray-400 hover:text-amber-600 transition-colors
-                           mt-1 inline-block bg-transparent border-none cursor-pointer p-0">
-                Forgot your password?
-              </button>}
-            >
+              onGoogleSuccess={handleGoogleSuccess}
+              onGoogleError={handleGoogleError}
+              googleLoading={googleLoading}
+              forgotLink={
+                <button type="button" onClick={() => setShowForgot(true)}
+                  className="text-xs text-gray-400 hover:text-amber-600 transition-colors
+                             mt-1 inline-block bg-transparent border-none cursor-pointer p-0">
+                  Forgot your password?
+                </button>
+              }>
               <div className="f0">
                 <AuthInput icon="✉" type="email" placeholder="Email address"
                   value={loginForm.email} onChange={setL("email")} />
@@ -417,43 +322,33 @@ const handleGoogleError = () => {
               title="Create Account" subtitle="Start your adventure today"
               error={isSignUp?error:""} loading={loading&&isSignUp}
               onSubmit={handleSignup} submitLabel="Create Account"
-              onGoogleClick={handleGoogleLogin} googleLoading={googleLoading}
-            >
-              <div className="f0"><AuthInput icon="👤" type="text" placeholder="Full name *"
-                value={signupForm.name} onChange={setS("name")} /></div>
-              <div className="f1"><AuthInput icon="✉" type="email" placeholder="Email address *"
-                value={signupForm.email} onChange={setS("email")} /></div>
-              <div className="f2"><AuthInput icon="🔒" type="password" placeholder="Password * (min 6 chars)"
-                value={signupForm.password} onChange={setS("password")} /></div>
-              <div className="f3"><AuthInput icon="🎂" type="number" placeholder="Age (optional)"
-                value={signupForm.age} onChange={setS("age")} /></div>
-              <div className="f4"><AuthInput icon="📝" type="text" placeholder="Bio (optional)"
-                value={signupForm.bio} onChange={setS("bio")} /></div>
+              onGoogleSuccess={handleGoogleSuccess}
+              onGoogleError={handleGoogleError}
+              googleLoading={googleLoading}>
+              <div className="f0"><AuthInput icon="👤" type="text" placeholder="Full name *" value={signupForm.name} onChange={setS("name")} /></div>
+              <div className="f1"><AuthInput icon="✉" type="email" placeholder="Email address *" value={signupForm.email} onChange={setS("email")} /></div>
+              <div className="f2"><AuthInput icon="🔒" type="password" placeholder="Password * (min 6 chars)" value={signupForm.password} onChange={setS("password")} /></div>
+              <div className="f3"><AuthInput icon="🎂" type="number" placeholder="Age (optional)" value={signupForm.age} onChange={setS("age")} /></div>
+              <div className="f4"><AuthInput icon="📝" type="text" placeholder="Bio (optional)" value={signupForm.bio} onChange={setS("bio")} /></div>
             </FormPanel>
           </div>
 
-          {/* Sliding overlay */}
+          {/* Overlay */}
           <div className="overlay-wrap">
             <div className="overlay-inner">
               <div className="overlay-panel-inner overlay-left">
-                <img src="/travel-icon.png" alt="Travel Buddy"
-                  className="mb-5 object-contain"
+                <img src="/travel-icon.png" alt="Travel Buddy" className="mb-5 object-contain"
                   style={{width:88,height:88,animation:"iconPulse 3s ease-in-out infinite"}} />
-                <h2 className="text-2xl font-bold mb-2" style={{fontFamily:"'Cormorant Garamond',serif"}}>
-                  Welcome Back!
-                </h2>
+                <h2 className="text-2xl font-bold mb-2" style={{fontFamily:"'Cormorant Garamond',serif"}}>Welcome Back!</h2>
                 <p className="text-sm text-white/75 leading-relaxed mb-7 max-w-[200px]">
                   Already a traveler? Sign in to continue your adventures.
                 </p>
                 <OverlayButton onClick={()=>{setError("");setMode("login");}} label="Sign In →" />
               </div>
               <div className="overlay-panel-inner overlay-right">
-                <img src="/travel-icon.png" alt="Travel Buddy"
-                  className="mb-5 object-contain"
+                <img src="/travel-icon.png" alt="Travel Buddy" className="mb-5 object-contain"
                   style={{width:88,height:88,animation:"iconPulse 3s ease-in-out infinite 1s"}} />
-                <h2 className="text-2xl font-bold mb-2" style={{fontFamily:"'Cormorant Garamond',serif"}}>
-                  Hello, Explorer!
-                </h2>
+                <h2 className="text-2xl font-bold mb-2" style={{fontFamily:"'Cormorant Garamond',serif"}}>Hello, Explorer!</h2>
                 <p className="text-sm text-white/75 leading-relaxed mb-7 max-w-[200px]">
                   New here? Join thousands of solo travelers finding companions.
                 </p>
@@ -471,58 +366,42 @@ const handleGoogleError = () => {
         </div>
       </div>
 
-      {/* Forgot Password Modal */}
-      {showForgot && (
-        <ForgotPasswordModal
-          onClose={() => setShowForgot(false)}
-          showToast={showToast}
-        />
-      )}
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} showToast={showToast} />}
     </>
   );
 }
 
 // ── FormPanel ─────────────────────────────────────────────────────────────────
 function FormPanel({ title, subtitle, children, error, loading, onSubmit, submitLabel,
-                     onGoogleSuccess, onGoogleError, forgotLink }) {
+                     onGoogleSuccess, onGoogleError, googleLoading, forgotLink }) {
   return (
     <div className="flex flex-col items-center justify-center px-8 sm:px-12 py-10">
-
-      {/* Brand mark */}
       <div className="w-11 h-11 rounded-2xl flex items-center justify-center mb-4 shadow-lg shrink-0"
         style={{background:"linear-gradient(135deg,#1a3d2b,#2a5c40)"}}>
         <span className="text-amber-400 text-xl font-black">✦</span>
       </div>
-
       <h1 className="text-2xl font-bold text-gray-800 mb-0.5 tracking-tight"
         style={{fontFamily:"'Cormorant Garamond',serif"}}>{title}</h1>
       <p className="text-xs text-gray-400 mb-5 tracking-wide">{subtitle}</p>
 
-      {/* Error */}
       {error && (
-        <div className="w-full mb-4 px-4 py-3 rounded-xl text-sm text-red-700
-                        bg-red-50 border border-red-200 flex items-start gap-2">
+        <div className="w-full mb-4 px-4 py-3 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200 flex items-start gap-2">
           <span className="shrink-0 mt-0.5">⚠️</span><span>{error}</span>
         </div>
       )}
 
-      {/* Fields */}
       <div className="w-full space-y-3 mb-2">{children}</div>
-
-      {/* Forgot password link */}
       {forgotLink && <div className="w-full text-right mb-3">{forgotLink}</div>}
 
       {/* Submit button */}
       <button type="button"
-        className="auth-btn w-full py-4 rounded-2xl text-base font-black uppercase
-                   tracking-widest text-white relative overflow-hidden transition-all
-                   duration-200 disabled:opacity-60 disabled:cursor-not-allowed mb-4"
+        className="auth-btn w-full py-4 rounded-2xl text-base font-black uppercase tracking-widest
+                   text-white relative overflow-hidden transition-all duration-200
+                   disabled:opacity-60 disabled:cursor-not-allowed mb-4"
         style={{
-          background: loading ? "#9cbc9e"
-            : "linear-gradient(135deg,#1a3d2b 0%,#2a5c40 45%,#c9640a 100%)",
+          background: loading ? "#9cbc9e" : "linear-gradient(135deg,#1a3d2b 0%,#2a5c40 45%,#c9640a 100%)",
           backgroundSize:"200% 100%",
-          boxShadow: loading ? "none"
-            : "0 6px 24px rgba(26,61,43,.45), 0 2px 8px rgba(201,100,10,.25)",
+          boxShadow: loading ? "none" : "0 6px 24px rgba(26,61,43,.45), 0 2px 8px rgba(201,100,10,.25)",
           letterSpacing:"0.12em",
         }}
         onClick={!loading ? onSubmit : undefined}
@@ -539,27 +418,35 @@ function FormPanel({ title, subtitle, children, error, loading, onSubmit, submit
           : submitLabel}
       </button>
 
-      {/* Google Sign-In button */}
-      <div className="w-full">
-  <GoogleLogin
-    onSuccess={onGoogleSuccess}
-    onError={onGoogleError}
-    width="100%"
-    shape="rectangular"
-    theme="outline"
-    text="continue_with"
-    useOneTap={false}
-  />
-</div>
+      {/* Google Sign-In — uses credential flow (no popup, no COOP error) */}
+      {googleLoading ? (
+        <div className="w-full py-3 flex items-center justify-center gap-2 text-sm text-gray-500">
+          <svg className="spin-svg w-4 h-4" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="#e2e8f0" strokeWidth="3"/>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="#1a3d2b" strokeWidth="3" strokeLinecap="round"/>
+          </svg>
+          Connecting with Google…
+        </div>
+      ) : (
+        <div className="w-full flex justify-center">
+          <GoogleLogin
+            onSuccess={onGoogleSuccess}
+            onError={onGoogleError}
+            width="100%"
+            shape="rectangular"
+            theme="outline"
+            text="continue_with"
+            useOneTap={false}
+          />
+        </div>
+      )}
 
-      {/* OR divider */}
       <div className="flex items-center gap-3 my-3 w-full">
         <div className="flex-1 h-px bg-gray-100"/>
         <span className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">or</span>
         <div className="flex-1 h-px bg-gray-100"/>
       </div>
 
-      {/* Social icons */}
       <div className="flex gap-3">
         {[
           {bg:"#1877F2",icon:"f",label:"Facebook"},
@@ -603,11 +490,10 @@ function OverlayButton({ onClick, label }) {
   return (
     <button type="button" onClick={onClick}
       onMouseEnter={()=>setHovered(true)} onMouseLeave={()=>setHovered(false)}
-      className="auth-btn px-9 py-3 rounded-full text-sm font-black uppercase
-                 tracking-widest border-2 border-white/75 transition-all duration-250 cursor-pointer"
+      className="auth-btn px-9 py-3 rounded-full text-sm font-black uppercase tracking-widest
+                 border-2 border-white/75 transition-all duration-250 cursor-pointer"
       style={{
-        background:hovered?"rgba(255,255,255,.22)":"transparent",
-        color:"#fff",
+        background:hovered?"rgba(255,255,255,.22)":"transparent", color:"#fff",
         boxShadow:hovered?"0 0 20px rgba(255,255,255,.22)":"none",
         transform:hovered?"translateY(-2px)":"none",
       }}>{label}</button>

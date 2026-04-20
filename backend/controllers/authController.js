@@ -116,41 +116,20 @@ const login = async (req, res) => {
 //    4. If user exists by email → link google_id to existing account
 //    5. If new → create account (no password needed)
 // ─────────────────────────────────────────────────────────────────────────────
-const { OAuth2Client } = require("google-auth-library");
-
 const googleAuth = async (req, res) => {
   try {
     const { credential } = req.body;
-    if (!credential) return res.status(400).json({ error: "Google credential required." });
+    if (!credential) return res.status(400).json({ error: "Google credential is required." });
 
-    // Verify the ID token with Google
+    // Verify the ID token using google-auth-library
+    const { OAuth2Client } = require("google-auth-library");
     const client  = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
     const ticket  = await client.verifyIdToken({
       idToken:  credential,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
-    const payload  = ticket.getPayload();
+    const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
-
-    // Verify the access token by fetching user info from Google
-    // This confirms the token is valid and belongs to this user
-    if (!googleId || !email) {
-      return res.status(400).json({ error: "Google user info is required." });
-    }
-
-    // Optional: verify access token with Google userinfo endpoint
-    if (accessToken) {
-      try {
-        const verify = await fetch(
-          `https://www.googleapis.com/oauth2/v3/userinfo`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        const info = await verify.json();
-        if (info.sub !== googleId) {
-          return res.status(401).json({ error: "Google token verification failed." });
-        }
-      } catch { /* proceed if verification API is unavailable */ }
-    }
 
     // 3. Existing Google account?
     let user = await UserModel.findByGoogleId(googleId);
